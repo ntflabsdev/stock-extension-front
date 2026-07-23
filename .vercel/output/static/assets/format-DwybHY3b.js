@@ -1,0 +1,1 @@
+var e=(e,t=2)=>e.toLocaleString(`en-IN`,{minimumFractionDigits:t,maximumFractionDigits:t}),t=(t,n=2)=>(t>=0?`+`:``)+e(t,n);export{t as n,e as t};

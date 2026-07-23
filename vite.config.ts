@@ -14,9 +14,11 @@ export default defineConfig({
     tsConfigPaths({ projects: ["./tsconfig.json"] }),
     tailwindcss(),
     tanstackStart(),
-    // No hardcoded preset — on Vercel Nitro uses `vercel` automatically.
-    // Locally / VPS you can set NITRO_PRESET=node-server
-    nitro(),
+    // Always emit Vercel Build Output API (`.vercel/output`) so deploy
+    // does not fall back to looking for a Vite `dist/` folder.
+    nitro({
+      preset: "vercel",
+    }),
     viteReact(),
   ],
 });
