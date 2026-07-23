@@ -1,0 +1,23 @@
+import { defineConfig } from "vite";
+import { tanstackStart } from "@tanstack/react-start/plugin/vite";
+import viteReact from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
+import tsConfigPaths from "vite-tsconfig-paths";
+import { nitro } from "nitro/vite";
+
+export default defineConfig({
+  server: {
+    port: 8080,
+    host: "localhost",
+  },
+  plugins: [
+    tsConfigPaths({ projects: ["./tsconfig.json"] }),
+    tailwindcss(),
+    tanstackStart(),
+    // VPS / Node deploy (nginx → node). Override with NITRO_PRESET if needed.
+    nitro({
+      preset: "node-server",
+    }),
+    viteReact(),
+  ],
+});
