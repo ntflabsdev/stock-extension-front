@@ -32,12 +32,18 @@ npm run build    # production build
 npm run preview  # preview build
 ```
 
-## Deploy (VPS)
+## Deploy (Vercel)
+
+1. Root Directory = `market-pulse-ui-main` (if monorepo)
+2. Framework Preset = **TanStack Start** (not Vite / Other)
+3. **Output Directory leave empty** (do not set `dist`)
+4. Env: `VITE_API_BASE_URL=https://apistock.aistaging.in`
+
+`vercel.json` already sets `"framework": "tanstack-start"`.
+
+## Deploy (VPS / Node)
 
 ```bash
-npm ci
-npm run build
-# serve Nitro node-server output (see .output/ after build)
+NITRO_PRESET=node-server npm run build
+node .output/server/index.mjs
 ```
-
-Point nginx to the Node process. Frontend talks to `VITE_API_BASE_URL`.

@@ -14,10 +14,9 @@ export default defineConfig({
     tsConfigPaths({ projects: ["./tsconfig.json"] }),
     tailwindcss(),
     tanstackStart(),
-    // VPS / Node deploy (nginx → node). Override with NITRO_PRESET if needed.
-    nitro({
-      preset: "node-server",
-    }),
+    // No hardcoded preset — on Vercel Nitro uses `vercel` automatically.
+    // Locally / VPS you can set NITRO_PRESET=node-server
+    nitro(),
     viteReact(),
   ],
 });
