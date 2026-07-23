@@ -1,23 +1,28 @@
 /**
- * Vercel project settings often still require a `dist/` folder.
- * Nitro + vercel preset writes Build Output API to `.vercel/output`.
- * This shim copies static assets into `dist/` so the platform check passes;
- * Vercel still prefers `.vercel/output` for SSR/functions when present.
+ * Fallback if something runs this after vite build.
+ * Prefer vite.config Nitro hooks — those always run with `vite build`.
  */
 import { cpSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 
-const vercelStatic = ".vercel/output/static";
 const dist = "dist";
-
 mkdirSync(dist, { recursive: true });
 
-if (existsSync(vercelStatic)) {
-  cpSync(vercelStatic, dist, { recursive: true });
-  console.log("[postbuild] synced .vercel/output/static → dist/");
-} else {
+const candidates = [".vercel/output/static", ".output/public"];
+let synced = false;
+for (const src of candidates) {
+  if (existsSync(src)) {
+    cpSync(src, dist, { recursive: true });
+    console.log(`[postbuild] ${src} → dist/`);
+    synced = true;
+    break;
+  }
+}
+
+if (!synced) {
   writeFileSync(
-    `${dist}/index.html`,
-    "<!doctype html><html><body>Market Pulse build ok</body></html>\n",
+    join(dist, "index.html"),
+    "<!doctype html><html><body>Market Pulse</body></html>\n",
   );
-  console.log("[postbuild] created placeholder dist/ (no vercel static found)");
+  console.log("[postbuild] placeholder dist/ created");
 }
