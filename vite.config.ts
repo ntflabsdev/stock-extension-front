@@ -4,65 +4,42 @@ import viteReact from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import tsConfigPaths from "vite-tsconfig-paths";
 import { nitro } from "nitro/vite";
-import { existsSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
-function writeVercelBuildOutputApiFiles() {
-  const out = join(process.cwd(), ".vercel", "output");
-  const fnDir = join(out, "functions", "__server.func");
-  const entry = join(fnDir, "index.mjs");
+/** Fix header-only asset routes so static CSS/JS are served (not SSR 404). */
+function patchVercelConfigRoutes() {
+  const configPath = join(process.cwd(), ".vercel", "output", "config.json");
+  if (!existsSync(configPath)) return;
 
-  if (!existsSync(out)) {
-    console.warn("[vercel-output] .vercel/output missing — skip config write");
-    return;
-  }
+  try {
+    const cfg = JSON.parse(readFileSync(configPath, "utf8"));
+    if (!Array.isArray(cfg.routes)) return;
 
-  mkdirSync(fnDir, { recursive: true });
+    let changed = false;
+    cfg.routes = cfg.routes.map((route: Record<string, unknown>) => {
+      if (
+        route?.src &&
+        route?.headers &&
+        !route.dest &&
+        !route.handle &&
+        route.continue !== true
+      ) {
+        changed = true;
+        return { ...route, continue: true };
+      }
+      return route;
+    });
 
-  const configPath = join(out, "config.json");
-  writeFileSync(
-    configPath,
-    JSON.stringify(
-      {
-        version: 3,
-        routes: [
-          {
-            headers: { "cache-control": "public, max-age=31536000, immutable" },
-            src: "/assets/(.*)",
-          },
-          { handle: "filesystem" },
-          { src: "/(.*)", dest: "/__server" },
-        ],
-      },
-      null,
-      2,
-    ) + "\n",
-  );
-  console.log("[vercel-output] wrote", configPath);
-
-  const vcPath = join(fnDir, ".vc-config.json");
-  writeFileSync(
-    vcPath,
-    JSON.stringify(
-      {
-        runtime: "nodejs20.x",
-        handler: "index.mjs",
-        launcherType: "Nodejs",
-        shouldAddHelpers: false,
-        supportsResponseStreaming: true,
-      },
-      null,
-      2,
-    ) + "\n",
-  );
-  console.log("[vercel-output] wrote", vcPath);
-
-  if (!existsSync(entry)) {
-    throw new Error(`[vercel-output] missing server entry: ${entry}`);
+    if (changed) {
+      writeFileSync(configPath, JSON.stringify(cfg, null, 2) + "\n");
+      console.log("[vercel-output] patched config.json routes with continue:true");
+    }
+  } catch (err) {
+    console.warn("[vercel-output] patch failed:", err);
   }
 }
 
-/** Wipe incomplete prebuilt output that makes Vercel skip a real build. */
 function cleanIncompletePrebuilt(): Plugin {
   return {
     name: "clean-incomplete-vercel-prebuilt",
@@ -72,20 +49,10 @@ function cleanIncompletePrebuilt(): Plugin {
       const cfg = join(out, "config.json");
       if (existsSync(out) && !existsSync(cfg)) {
         console.warn(
-          "[vercel-output] incomplete .vercel/output found (no config.json) — deleting so Vercel does not use prebuilt",
+          "[vercel-output] incomplete .vercel/output — deleting before build",
         );
         rmSync(join(process.cwd(), ".vercel"), { recursive: true, force: true });
       }
-    },
-  };
-}
-
-function ensureVercelConfigPlugin(): Plugin {
-  return {
-    name: "ensure-vercel-config-json",
-    apply: "build",
-    closeBundle() {
-      // Nitro may still be writing; final write also runs in nitro hooks.
     },
   };
 }
@@ -103,15 +70,11 @@ export default defineConfig({
     nitro({
       preset: "vercel",
       hooks: {
-        compiled() {
-          writeVercelBuildOutputApiFiles();
-        },
         close() {
-          writeVercelBuildOutputApiFiles();
+          patchVercelConfigRoutes();
         },
       },
     }),
     viteReact(),
-    ensureVercelConfigPlugin(),
   ],
 });
