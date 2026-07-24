@@ -1,8 +1,8 @@
 /**
- * Ensure Vercel Build Output API files exist.
- * Do NOT clobber Nitro's config.json — only fill gaps / fix routes.
+ * Ensure Vercel Build Output API files exist / are correct.
+ * Critical: asset header routes must have continue:true or CSS/JS 404.
  */
-import { existsSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 const out = join(process.cwd(), ".vercel", "output");
@@ -10,20 +10,27 @@ const fnDir = join(out, "functions", "__server.func");
 const entry = join(fnDir, "index.mjs");
 const configPath = join(out, "config.json");
 const vcPath = join(fnDir, ".vc-config.json");
-const staticAssets = join(out, "static", "assets");
+const staticDir = join(out, "static");
 
 if (!existsSync(out)) {
   console.error("[vercel-output] Missing .vercel/output after build.");
   process.exit(1);
 }
-
 if (!existsSync(entry)) {
   console.error("[vercel-output] Missing function entry:", entry);
   process.exit(1);
 }
+if (!existsSync(staticDir)) {
+  console.error("[vercel-output] Missing static/ — CSS/JS will 404.");
+  process.exit(1);
+}
 
-if (!existsSync(staticAssets)) {
-  console.error("[vercel-output] Missing static/assets — CSS/JS will 404 on Vercel.");
+const staticFiles = readdirSync(staticDir, { recursive: true }).filter(
+  (f) => typeof f === "string" && !String(f).endsWith("/"),
+);
+console.log(`[vercel-output] static files: ${staticFiles.length}`);
+if (staticFiles.length < 3) {
+  console.error("[vercel-output] Too few static files:", staticFiles);
   process.exit(1);
 }
 
@@ -34,10 +41,13 @@ function fallbackConfig() {
     version: 3,
     routes: [
       {
+        src: "/assets-v2/(.*)",
+        headers: { "cache-control": "public, max-age=31536000, immutable" },
+        continue: true,
+      },
+      {
         src: "/assets/(.*)",
-        headers: {
-          "cache-control": "public, max-age=31536000, immutable",
-        },
+        headers: { "cache-control": "public, max-age=31536000, immutable" },
         continue: true,
       },
       { handle: "filesystem" },
@@ -46,14 +56,13 @@ function fallbackConfig() {
   };
 }
 
-/** Header-only asset routes MUST continue so filesystem can serve the file. */
 function fixRoutes(cfg) {
   if (!Array.isArray(cfg.routes)) cfg.routes = fallbackConfig().routes;
+
   cfg.routes = cfg.routes.map((route) => {
     if (
-      route &&
-      route.src &&
-      route.headers &&
+      route?.src &&
+      route?.headers &&
       !route.dest &&
       !route.handle &&
       route.continue !== true
@@ -63,33 +72,36 @@ function fixRoutes(cfg) {
     return route;
   });
 
-  const hasFilesystem = cfg.routes.some((r) => r?.handle === "filesystem");
+  const hasFs = cfg.routes.some((r) => r?.handle === "filesystem");
   const hasServer = cfg.routes.some(
-    (r) => r?.dest === "/__server" || String(r?.dest || "").includes("__server"),
+    (r) => typeof r?.dest === "string" && String(r.dest).includes("__server"),
   );
-  if (!hasFilesystem) cfg.routes.push({ handle: "filesystem" });
+  if (!hasFs) cfg.routes.push({ handle: "filesystem" });
   if (!hasServer) cfg.routes.push({ src: "/(.*)", dest: "/__server" });
+
+  // Ensure assets-v2 is covered (new build.assetsDir)
+  const hasV2 = cfg.routes.some(
+    (r) => typeof r?.src === "string" && r.src.includes("assets-v2"),
+  );
+  if (!hasV2) {
+    cfg.routes.unshift({
+      src: "/assets-v2/(.*)",
+      headers: { "cache-control": "public, max-age=31536000, immutable" },
+      continue: true,
+    });
+  }
 
   cfg.version = 3;
   return cfg;
 }
 
-let cfg;
-if (existsSync(configPath)) {
-  try {
-    cfg = JSON.parse(readFileSync(configPath, "utf8"));
-    console.log("[vercel-output] patching existing config.json");
-  } catch {
-    cfg = fallbackConfig();
-    console.warn("[vercel-output] invalid config.json — rewriting");
-  }
-} else {
-  cfg = fallbackConfig();
-  console.log("[vercel-output] creating config.json");
-}
+let cfg = existsSync(configPath)
+  ? JSON.parse(readFileSync(configPath, "utf8"))
+  : fallbackConfig();
 
 cfg = fixRoutes(cfg);
 writeFileSync(configPath, JSON.stringify(cfg, null, 2) + "\n");
+console.log("[vercel-output] wrote config.json routes=", cfg.routes.length);
 
 if (!existsSync(vcPath)) {
   writeFileSync(
@@ -106,7 +118,4 @@ if (!existsSync(vcPath)) {
       2,
     ) + "\n",
   );
-  console.log("[vercel-output] wrote", vcPath);
 }
-
-console.log("[vercel-output] ready — static/assets OK, config routes=", cfg.routes.length);

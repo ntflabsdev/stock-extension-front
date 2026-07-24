@@ -1,25 +1,14 @@
 /**
- * If an incomplete .vercel/output is present (common when someone committed
- * local Nitro output), Vercel switches to --prebuilt mode and fails with:
- *   Config file was not found at ".../.vercel/output/config.json"
- * Delete it before build so Vercel always runs a real build.
+ * Run ONCE before `vite build` (via prebuild / vercel buildCommand).
+ * Do NOT clear .vercel from inside Vite plugins — client/SSR/nitro each
+ * call buildStart and would delete static assets mid-build (CSS/JS 404).
  */
 import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
 const vercelDir = join(process.cwd(), ".vercel");
-const out = join(vercelDir, "output");
-const cfg = join(out, "config.json");
 
-if (existsSync(out) && !existsSync(cfg)) {
-  console.warn(
-    "[vercel-output] Removing incomplete .vercel/output (missing config.json)",
-  );
+if (existsSync(vercelDir)) {
+  console.warn("[vercel-output] Clearing .vercel before build (once)");
   rmSync(vercelDir, { recursive: true, force: true });
-} else if (existsSync(out)) {
-  // Always rebuild fresh on CI
-  if (process.env.VERCEL || process.env.CI) {
-    console.warn("[vercel-output] CI detected — clearing .vercel for fresh build");
-    rmSync(vercelDir, { recursive: true, force: true });
-  }
 }

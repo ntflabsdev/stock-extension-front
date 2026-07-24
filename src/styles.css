@@ -2,6 +2,8 @@
 @source "../src";
 @import "tw-animate-css";
 
+/* cache-bust: vercel static assets v2 */
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
